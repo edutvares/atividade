@@ -16,6 +16,8 @@ public class Cliente {
     String filename = args[0];
     String principalHost = args[1];
 
+    TelaSimples tela = new TelaSimples();
+
     List<String> servidores = pedirAoServidorPrincipal(filename, principalHost);
   }
 
