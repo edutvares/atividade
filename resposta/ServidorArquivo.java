@@ -1,3 +1,4 @@
+import java.io.*;
 import java.net.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -26,6 +27,61 @@ public class ServidorArquivo {
   }
 
   public void start() throws Exception {
+    // Inicia thread para servidor TCP
+    new Thread(this::iniciarServidorTCP).start();
+
+    // Inicia escuta multicast
+    iniciarEscutaMulticast();
+  }
+
+  private void iniciarServidorTCP() {
+    try {
+      ServerSocket serverSocket = new ServerSocket(tcpPort);
+      System.out.println("[ARQUIVO] Servidor TCP escutando na porta: " + tcpPort);
+
+      while (true) {
+        Socket cliente = serverSocket.accept();
+        new Thread(() -> handleClienteDownload(cliente)).start();
+      }
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+  }
+
+  private void handleClienteDownload(Socket cliente) {
+    try {
+      BufferedReader in = new BufferedReader(new InputStreamReader(cliente.getInputStream()));
+      OutputStream out = cliente.getOutputStream();
+
+      String filename = in.readLine();
+      System.out.println("[ARQUIVO] Cliente pediu: " + filename);
+
+      File file = new File(baseDir, filename);
+
+      if (file.exists() && file.isFile()) {
+        // Envia arquivo
+        FileInputStream fis = new FileInputStream(file);
+        byte[] buffer = new byte[4096];
+        int bytesLidos;
+
+        while ((bytesLidos = fis.read(buffer)) != -1) {
+          out.write(buffer, 0, bytesLidos);
+        }
+
+        fis.close();
+        out.flush();
+        System.out.println("[ARQUIVO] Arquivo " + filename + " enviado com sucesso");
+      } else {
+        System.out.println("[ARQUIVO] Arquivo " + filename + " não encontrado");
+      }
+
+      cliente.close();
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+  }
+
+  private void iniciarEscutaMulticast() throws Exception {
     InetAddress group = InetAddress.getByName(MULTICAST_GROUP);
     InetSocketAddress groupAddress = new InetSocketAddress(group, MULTICAST_PORT);
 
@@ -34,7 +90,7 @@ public class ServidorArquivo {
     try (MulticastSocket socket = new MulticastSocket(MULTICAST_PORT)) {
       socket.joinGroup(groupAddress, netIf);
 
-      System.out.println("Cliente ouvindo grupo multicast...");
+      System.out.println("[ARQUIVO] Escutando grupo multicast...");
 
       byte[] buffer = new byte[1024];
 
@@ -46,7 +102,7 @@ public class ServidorArquivo {
 
         // Expecting: <queryId>;<filename>;<replyIp>;<replyPort>
         if (parts.length < 4) {
-          System.out.println("Mensagem multicast em formato inesperado: " + msg);
+          System.out.println("[ARQUIVO] Mensagem multicast em formato inesperado: " + msg);
           continue;
         }
 
@@ -57,7 +113,7 @@ public class ServidorArquivo {
 
         boolean exists = Files.exists(Paths.get(baseDir, filename));
 
-        System.out.println((exists ? "Arquivo encontrado: " : "Arquivo nao encontrado: ") + filename
+        System.out.println("[ARQUIVO] " + (exists ? "Arquivo encontrado: " : "Arquivo nao encontrado: ") + filename
             + ". Enviando resposta para " + replyIp + ":" + replyPort + " (query=" + queryId + ")");
 
         String reply = queryId + ";" + nomeServidor + ";" + InetAddress.getLocalHost().getHostAddress() + ";"

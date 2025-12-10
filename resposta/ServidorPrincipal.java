@@ -5,8 +5,7 @@ import java.util.*;
 public class ServidorPrincipal {
 
   public static final int TCP_PORT = 6000;
-  public static final int REPLY_PORT = 5001;
-  public static final int TIMEOUT_MS = 10000; // aguarda 5s por respostas
+  public static final int TIMEOUT_MS = 10000; // aguarda 10s por respostas
   public static final String MULTICAST_GROUP = "230.0.0.1";
   public static final int MULTICAST_PORT = 4446;
 
@@ -48,20 +47,25 @@ public class ServidorPrincipal {
 
   private List<String> procurarArquivo(String fileName, String queryId) throws Exception {
 
-    String msg = queryId + ";" + fileName + ";" + getLocalIP() + ";" + REPLY_PORT;
+    // Cria socket UDP efêmero (porta 0 = atribuição automática)
+    DatagramSocket replySocket = new DatagramSocket(0);
+    int replyPort = replySocket.getLocalPort();
+
+    String msg = queryId + ";" + fileName + ";" + getLocalIP() + ";" + replyPort;
 
     InetAddress group = InetAddress.getByName(MULTICAST_GROUP);
     try (DatagramSocket socket = new DatagramSocket()) {
       byte[] buf = msg.getBytes();
       DatagramPacket packet = new DatagramPacket(buf, buf.length, group, MULTICAST_PORT);
       socket.send(packet);
-      System.out.println("[PRINCIPAL] Multicast enviado: " + msg);
+      System.out
+          .println("[PRINCIPAL] Multicast enviado: " + msg + " (query=" + queryId + ", replyPort=" + replyPort + ")");
     }
 
     List<String> respostas = new ArrayList<>();
 
     // abre socket para receber respostas UDP dos servidores de arquivo
-    try (DatagramSocket replySocket = new DatagramSocket(REPLY_PORT)) {
+    try {
       replySocket.setSoTimeout(TIMEOUT_MS);
       byte[] buffer = new byte[1024];
 
@@ -82,7 +86,7 @@ public class ServidorPrincipal {
             respostas.add(entry);
             System.out.println("[PRINCIPAL] Resposta recebida: " + entry);
           } else {
-            System.out.println("[PRINCIPAL] Resposta ignorada (A resposta tá toda atrapalhada): " + data);
+            System.out.println("[PRINCIPAL] Resposta ignorada (queryId mismatch): " + data);
           }
         } catch (SocketTimeoutException ste) {
           // timeout: verifica se já passou o tempo total
@@ -91,6 +95,8 @@ public class ServidorPrincipal {
           }
         }
       }
+    } finally {
+      replySocket.close();
     }
 
     return respostas;
